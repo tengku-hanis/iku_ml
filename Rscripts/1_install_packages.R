@@ -10,6 +10,7 @@ install.packages("mlbench")
 install.packages("skimr")
 install.packages("rpart.plot")
 install.packages("vip")
+install.packages("janitor")
 
 # Refresh session before installing the packages below
 install.packages("tidymodels")
