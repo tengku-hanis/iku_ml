@@ -7,10 +7,9 @@
 # Compare several models
 
 # Install packages --------------------------------------------------------
-# install.packages("klaR")
+# install.packages("randomForest")
 # install.packages("mda")
 # install.packages("earth")
-# install.packages("discrim")
 
 
 # Packages ----------------------------------------------------------------
@@ -70,11 +69,7 @@ pima_cv <- vfold_cv(pima_train_process, v = 10)
 
 # Decision tree
 dt_spec <- 
-  decision_tree(
-    cost_complexity = tune(),
-    tree_depth = tune(),
-    min_n = tune()
-  ) %>% 
+  decision_tree(cost_complexity = tune(), tree_depth = tune(), min_n = tune()) %>% 
   set_engine("rpart") %>% 
   set_mode("classification")
 
@@ -83,21 +78,16 @@ mars_spec <-
   discrim_flexible(prod_degree = tune()) %>% 
   set_engine("earth")
 
-# Regularised discriminant analysis
-reg_sepc <- 
-  discrim_regularized(frac_common_cov = tune(), frac_identity = tune()) %>% 
-  set_engine("klaR")
+# Random forest
+rf_spec <- 
+  rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%  
+  set_engine("randomForest") %>% 
+  set_mode("classification")
 
 ## Specify workflow ----
 all_workflows <- 
-  workflow_set(
-    preproc = list("formula" = diabetes~.),
-    models = list(regularized = reg_sepc, 
-                  mars = mars_spec, 
-                  cart = dt_spec)
-    ) %>% 
-  option_add(id = "formula_cart", 
-             control = control_grid(extract = function(x) x))
+  workflow_set(preproc = list("formula" = diabetes~.),
+               models = list(dt_spec, mars_spec, rf_spec)) 
 all_workflows
 
 ## tune_grid ----
@@ -113,37 +103,37 @@ rank_results(all_workflows, rank_metric = "roc_auc")
 autoplot(all_workflows, metric = "roc_auc")
 
 ## Extract best model ----
-da_results <- 
+best_model <- 
   all_workflows %>% 
-  extract_workflow_set_result("formula_regularized")
-da_results
+  extract_workflow_set_result("formula_discrim_flexible")
+best_model
 
 ## Explore best models ----
-autoplot(da_results) + theme_light()
-da_results %>% collect_metrics()
+autoplot(best_model) + theme_light()
+best_model %>% collect_metrics()
 
-da_results %>% show_best(metric = "accuracy")
-da_results %>% show_best(metric = "roc_auc")
+best_model %>% show_best(metric = "accuracy")
+best_model %>% show_best(metric = "roc_auc")
 
 best_tune <- 
-  da_results %>% 
+  best_model %>% 
   select_best(metric = "roc_auc")
 
-## Extract worflow ----
-da_workflow <- 
+## Extract workflow ----
+best_model_workflow <- 
   all_workflows %>% 
-  extract_workflow("formula_regularized")
+  extract_workflow("formula_discrim_flexible")
 
 ## Finalize workflow ----
-da_wf_final <- 
-  da_workflow %>% 
+wf_final <- 
+  best_model_workflow %>% 
   finalize_workflow(best_tune)
 
 
 # Re-fit on training data -------------------------------------------------
 
-da_train <- 
-  da_wf_final %>% 
+mod_train <- 
+  wf_final %>% 
   fit(data = pima_train_process)
 
 
@@ -152,13 +142,13 @@ da_train <-
 ## Fit on test data ----
 pima_pred <- 
   pima_test_process %>% 
-  bind_cols(predict(da_train, new_data = pima_test_process)) %>% 
-  bind_cols(predict(da_train, new_data = pima_test_process, type = "prob"))
+  bind_cols(predict(mod_train, new_data = pima_test_process)) %>% 
+  bind_cols(predict(mod_train, new_data = pima_test_process, type = "prob"))
 
 ## Performance metrics ----
 ## Accuracy
 pima_pred %>% 
-  accuracy(truth = diabetes, estimate = .pred_class)
+  yardstick::accuracy(truth = diabetes, estimate = .pred_class)
 
 ## Plot ROC
 pima_pred %>% 
@@ -171,8 +161,8 @@ pima_pred %>%
 # Remember, we select the best model based on ROC-AUC:
 
 # Current model:
-# Accuracy: 0.724
-# ROC_AUC: 0.840
+# Accuracy: 0.791
+# ROC_AUC: 0.859
 
 # Second model:
 # Accuracy: 0.739
